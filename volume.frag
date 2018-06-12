@@ -44,8 +44,50 @@ get_sample_data(vec3 in_sampling_pos)
 {
     vec3 obj_to_tex = vec3(1.0) / max_bounds;
     return texture(volume_texture, in_sampling_pos * obj_to_tex).r;
-
 }
+
+
+vec3
+binary_search(vec3 sampling_pos_low, vec3 sampling_pos_high, float epsilon_treshold, int condition)
+{
+	vec3 low_border = sampling_pos_low;
+	vec3 high_border = sampling_pos_high;
+	vec3 new_coordinates = (low_border + high_border)/2;
+	float s = get_sample_data(new_coordinates);
+	float difference = s - iso_value;
+	int i = 0;
+
+	// iterative
+	while (difference != 0) {
+		if (difference < epsilon_treshold || i >= condition) {
+			break;
+		}
+		else if (difference > 0) {
+			high_border = new_coordinates;
+		}
+		else if (difference < 0) {
+			low_border = new_coordinates;
+		}
+		new_coordinates = (low_border + high_border)/2;
+		s = get_sample_data(new_coordinates);
+		difference = s - iso_value;
+		i++;
+	}
+
+	return new_coordinates;
+
+
+	// if (difference == 0 || difference <= epsilon_treshold) {
+	// 	return new_coordinates;
+	// }
+	// else if (difference > 0) {
+	// 	return binary_search(sampling_pos_low, new_coordinates, epsilon_treshold);
+	// }
+	// else if (difference < 0) {
+	// 	return binary_search(new_coordinates, sampling_pos_high, epsilon_treshold);
+	// }
+}
+
 
 void main()
 {
@@ -126,39 +168,55 @@ void main()
     
 #if TASK == 12 || TASK == 13
 	vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
+	vec3 old_pos = vec3(0.0, 0.0, 0.0);
+	float old_s = 0.0;
     // the traversal loop,
     // termination when the sampling position is outside volume boundarys
     // another termination condition for early ray termination is added
     while (inside_volume)
     {
-        // get sample
+        // get samples (density values)
         float s = get_sample_data(sampling_pos);
 
-        // apply the transfer functions to retrieve color and opacity
-        color = texture(transfer_texture, vec2(s, s));
+        #if TASK == 12			// basic
+        	// testing if sample is the correct one
+        	// Problem: gets only the same or higher density values (in this case enough)
+        	if (s - iso_value >= 0) {
+        		// apply the transfer functions to retrieve color and opacity
+        		color = texture(transfer_texture, vec2(s, s));
+       			dst = color;	// set color
+       			break;			// break while-loop
+        	}
+        #endif
 
-        // increment the ray sampling position
+        #if TASK == 13 			// Binary Search
+        	if (s - iso_value >= 0 && old_s - iso_value < 0 && old_s != 0.0) {
+        		vec3 new_coordiantes = binary_search(old_pos, sampling_pos, 0.0000001, 100000);
+        		float new_s = get_sample_data(new_coordiantes);
+        		// apply the transfer functions to retrieve color and opacity
+        		color = texture(transfer_texture, vec2(new_s, new_s));
+       			dst = color;	// set color
+       			break;			// break while-loop
+        	}
+		#endif
+
+		#if ENABLE_LIGHTNING == 1 // Add Shading
+        	IMPLEMENTLIGHT;
+			#if ENABLE_SHADOWING == 1 // Add Shadows
+    	    	IMPLEMENTSHADOW;
+			#endif
+		#endif
+
+		// old values for Binary Search
+		old_pos = sampling_pos;
+        old_s = get_sample_data(sampling_pos);
+
+		// increment the ray sampling position
         sampling_pos += ray_increment;
-#if TASK == 13 // Binary Search
-        IMPLEMENT;
-#endif
-#if ENABLE_LIGHTNING == 1 // Add Shading
-        IMPLEMENTLIGHT;
-#if ENABLE_SHADOWING == 1 // Add Shadows
-        IMPLEMENTSHADOW;
-#endif
-#endif
 
         // update the loop termination condition
         inside_volume = inside_volume_bounds(sampling_pos);
-        
-        // testing
-        if (s - iso_value >= 0) {
-        	dst = vec4(0.5, 0.5, 0.5, 0.5);
-        	inside_volume = false;
-        }
     }
-    // dst = color;
 #endif 
 
 #if TASK == 31
