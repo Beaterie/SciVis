@@ -210,23 +210,28 @@ void main()
         	}
         #endif
 
+        vec3 test = vec3(0.0);
         #if TASK == 13 			// Binary Search
         	if (s - iso_value >= 0 && old_s - iso_value < 0 && old_s != 0.0) {
-        		vec3 new_coordiantes = binary_search(old_pos, sampling_pos, 0.0000001, 100000);
-        		float new_s = get_sample_data(new_coordiantes);
+        		vec3 new_coordinates = binary_search(old_pos, sampling_pos, 0.0000001, 100000);
+        		float new_s = get_sample_data(new_coordinates);
         		// apply the transfer functions to retrieve color and opacity
         		color = texture(transfer_texture, vec2(new_s, new_s));
        			dst = color;	// set color
-       			break;			// break while-loop
-        	}
-		#endif
+                test = get_gradient(new_coordinates);
+                test = normalize(test);
+                color = vec4(test.x, test.y, test.z, 1.0);
+                dst = color;    // set color
 
-		#if ENABLE_LIGHTNING == 1 // Add Shading
-        	IMPLEMENTLIGHT;
-			#if ENABLE_SHADOWING == 1 // Add Shadows
-    	    	IMPLEMENTSHADOW;
-			#endif
-		#endif
+		        #if ENABLE_LIGHTNING == 1 // Add Shading
+                    // test = (1/(sqrt(test.x*test.x + test.y*test.y + test.z*test.z)) )* test;
+                    #if ENABLE_SHADOWING == 1 // Add Shadows
+                        IMPLEMENTSHADOW;
+                    #endif
+		        #endif
+                break;          // break while-loop
+            }
+        #endif
 
 		// old values for Binary Search
 		old_pos = sampling_pos;
