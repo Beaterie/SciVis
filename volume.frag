@@ -46,6 +46,13 @@ get_sample_data(vec3 in_sampling_pos)
     return texture(volume_texture, in_sampling_pos * obj_to_tex).r;
 }
 
+float
+get_sample_data(float x, float y, float z)
+{
+    vec3 obj_to_tex = vec3(1.0) / max_bounds;
+    return texture(volume_texture, vec3(x,y,z) * obj_to_tex).r;
+}
+
 
 vec3
 binary_search(vec3 sampling_pos_low, vec3 sampling_pos_high, float epsilon_treshold, int condition)
@@ -86,6 +93,20 @@ binary_search(vec3 sampling_pos_low, vec3 sampling_pos_high, float epsilon_tresh
 	// else if (difference < 0) {
 	// 	return binary_search(new_coordinates, sampling_pos_high, epsilon_treshold);
 	// }
+}
+
+vec3
+get_gradient(vec3 sampling_pos)
+{
+    vec3 steps = max_bounds / volume_dimensions;
+
+    float x = (get_sample_data(sampling_pos.x + steps.x, sampling_pos.y, sampling_pos.z) - 
+                get_sample_data(sampling_pos.x - steps.x, sampling_pos.y, sampling_pos.z)) / 2;
+    float y = (get_sample_data(sampling_pos.x, sampling_pos.y + steps.y, sampling_pos.z) -
+                get_sample_data(sampling_pos.x, sampling_pos.y - steps.y, sampling_pos.z)) / 2;
+    float z = (get_sample_data(sampling_pos.x, sampling_pos.y, sampling_pos.z + steps.z) -
+                get_sample_data(sampling_pos.x, sampling_pos.y, sampling_pos.z - steps.z)) / 2;
+    return vec3(x,y,z);
 }
 
 
