@@ -55,7 +55,7 @@ get_sample_data(float x, float y, float z)
 
 
 vec3
-binary_search(vec3 sampling_pos_low, vec3 sampling_pos_high, float epsilon_treshold, int condition)
+binary_search(vec3 sampling_pos_low, vec3 sampling_pos_high, float epsilon_threshold, int condition)
 {
 	vec3 low_border = sampling_pos_low;
 	vec3 high_border = sampling_pos_high;
@@ -66,7 +66,7 @@ binary_search(vec3 sampling_pos_low, vec3 sampling_pos_high, float epsilon_tresh
 
 	// iterative
 	while (difference != 0) {
-		if (difference < epsilon_treshold || i >= condition) {
+		if (difference < epsilon_threshold || i >= condition) {
 			break;
 		}
 		else if (difference > 0) {
@@ -82,17 +82,6 @@ binary_search(vec3 sampling_pos_low, vec3 sampling_pos_high, float epsilon_tresh
 	}
 
 	return new_coordinates;
-
-
-	// if (difference == 0 || difference <= epsilon_treshold) {
-	// 	return new_coordinates;
-	// }
-	// else if (difference > 0) {
-	// 	return binary_search(sampling_pos_low, new_coordinates, epsilon_treshold);
-	// }
-	// else if (difference < 0) {
-	// 	return binary_search(new_coordinates, sampling_pos_high, epsilon_treshold);
-	// }
 }
 
 vec3
@@ -106,7 +95,13 @@ get_gradient(vec3 sampling_pos)
                 get_sample_data(sampling_pos.x, sampling_pos.y - steps.y, sampling_pos.z)) / 2;
     float z = (get_sample_data(sampling_pos.x, sampling_pos.y, sampling_pos.z + steps.z) -
                 get_sample_data(sampling_pos.x, sampling_pos.y, sampling_pos.z - steps.z)) / 2;
-    return vec3(x,y,z);
+    return normalize(vec3(x,y,z));
+}
+
+vec3
+think_positiv(vec3 sampling_pos)
+{
+    return vec3(abs(sampling_pos.x),abs(sampling_pos.y),abs(sampling_pos.z));
 }
 
 
@@ -191,6 +186,8 @@ void main()
 	vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
 	vec3 old_pos = vec3(0.0, 0.0, 0.0);
 	float old_s = 0.0;
+    bool breaking = false;
+    bool go_light = false;
     // the traversal loop,
     // termination when the sampling position is outside volume boundarys
     // another termination condition for early ray termination is added
@@ -206,32 +203,71 @@ void main()
         		// apply the transfer functions to retrieve color and opacity
         		color = texture(transfer_texture, vec2(s, s));
        			dst = color;	// set color
-       			break;			// break while-loop
+       			breaking = true;			// break while-loop
+                go_light = true;
         	}
         #endif
 
-        vec3 test = vec3(0.0);
         #if TASK == 13 			// Binary Search
         	if (s - iso_value >= 0 && old_s - iso_value < 0 && old_s != 0.0) {
-        		vec3 new_coordinates = binary_search(old_pos, sampling_pos, 0.0000001, 100000);
+        		vec3 new_coordinates = binary_search(old_pos, sampling_pos, 0.00001, 10000);
         		float new_s = get_sample_data(new_coordinates);
         		// apply the transfer functions to retrieve color and opacity
-        		color = texture(transfer_texture, vec2(new_s, new_s));
-       			dst = color;	// set color
-                test = get_gradient(new_coordinates);
-                test = normalize(test);
-                color = vec4(test.x, test.y, test.z, 1.0);
+        		color = texture(transfer_texture, vec2(new_s, new_s));                
                 dst = color;    // set color
-
-		        #if ENABLE_LIGHTNING == 1 // Add Shading
-                    // test = (1/(sqrt(test.x*test.x + test.y*test.y + test.z*test.z)) )* test;
-                    #if ENABLE_SHADOWING == 1 // Add Shadows
-                        IMPLEMENTSHADOW;
-                    #endif
-		        #endif
-                break;          // break while-loop
+                sampling_pos = new_coordinates;
+                breaking = true;
+                go_light = true;
             }
         #endif
+
+        // LIGHT
+        #if ENABLE_LIGHTNING == 1
+        if (go_light == true) {
+            vec3 n = get_gradient(sampling_pos);
+            // n = think_positiv(n);
+            // map normal to color
+            // color = vec4(n.x, n.y, n.z, 1.0);
+
+            vec3 l = normalize(light_position - sampling_pos);
+            vec3 v = normalize(camera_location - sampling_pos);
+            vec3 r = normalize(reflect(l, n));
+            // ambient + diffuse + specular (Phong Shading)
+            vec4 new_color = vec4(light_ambient_color +
+                                    light_diffuse_color * max(dot(l,n), 0.0) + 
+                                    light_specular_color * pow(max(dot(r,v),0.0), light_ref_coef), 1);
+            dst = new_color;        // set color
+
+            // SHADOWS
+            #if ENABLE_SHADOWING == 1
+
+                vec3 shadow_steps = -l * sampling_distance;
+                vec3 shadow_test_pos = sampling_pos + shadow_steps; // sampling mit new_coordinates austauschen
+            
+                bool shadow_inside_volume = true;
+                bool shadow_hit = false;
+            // float shadow_epsilon = 0.001;
+
+                while (shadow_inside_volume) {
+                    float shadow_s = get_sample_data(shadow_test_pos);
+                    float shadow_diff = shadow_s - iso_value;
+
+                    if (shadow_diff > 0) {
+                        if (shadow_hit) {
+                            dst = vec4(0,0,0,1); 
+                        }
+                        shadow_hit = true;
+                    }
+                    shadow_test_pos += shadow_steps;
+                    shadow_inside_volume = inside_volume_bounds(shadow_test_pos);
+                }
+            #endif
+        }
+        #endif
+
+        if (breaking == true) {
+            break;      // break while-loop
+        }
 
 		// old values for Binary Search
 		old_pos = sampling_pos;
