@@ -301,28 +301,27 @@ void main()
     
     while (inside_volume)
     {
-        // get sample
-#if ENABLE_OPACITY_CORRECTION == 1 // Opacity Correction
+    #if ENABLE_OPACITY_CORRECTION == 1 // Opacity Correction
         
-#else
+    #else
         // Front-To-Back
         s = get_sample_data(sampling_pos);
         color = texture(transfer_texture, vec2(s, s));
         trans = trans * (1 - old_opac);
+        #if ENABLE_LIGHTNING == 1 // Add Shading
+            color = vec4(light_it_up(sampling_pos).xyz*color.xyz*2, color.w);
+        #endif
         inten = inten + trans * color.xyz * color.w;
         old_opac = color.w;
         if (trans == 0.0) {
             break;
         }
         // ------------
-#endif
+    #endif
 
         // increment the ray sampling position
         sampling_pos += ray_increment;
 
-#if ENABLE_LIGHTNING == 1 // Add Shading
-        
-#endif
         // update the loop termination condition
         inside_volume = inside_volume_bounds(sampling_pos);
     }
