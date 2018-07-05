@@ -104,6 +104,44 @@ think_positiv(vec3 sampling_pos)
     return vec3(abs(sampling_pos.x),abs(sampling_pos.y),abs(sampling_pos.z));
 }
 
+vec4
+light_it_up(vec3 sampling_pos)
+{
+    vec3 n = get_gradient(sampling_pos);
+    vec3 l = normalize(light_position - sampling_pos);
+    vec3 v = normalize(camera_location - sampling_pos);
+    vec3 r = normalize(reflect(l, n));
+    return vec4(light_ambient_color +
+        light_diffuse_color * max(dot(l,n), 0.0) + 
+        light_specular_color * pow(max(dot(r,v),0.0), light_ref_coef), 1);
+}
+
+vec4
+shadow_it(vec3 sampling_pos, vec4 color)
+{
+    vec3 l = normalize(light_position - sampling_pos);
+    vec3 shadow_steps = -l * sampling_distance;
+    vec3 shadow_test_pos = sampling_pos;
+            
+    bool shadow_inside_volume = true;
+    bool shadow_hit = false;
+
+    while (shadow_inside_volume) {
+        float shadow_s = get_sample_data(shadow_test_pos);
+        float shadow_diff = shadow_s - iso_value;
+
+        if (shadow_diff >= 0) {
+            if (shadow_hit) {
+                return vec4(light_ambient_color,1); 
+            }
+            shadow_hit = true;
+        }
+        shadow_test_pos += shadow_steps;
+        shadow_inside_volume = inside_volume_bounds(shadow_test_pos);
+    }
+    return color;
+}
+
 
 void main()
 {
@@ -221,46 +259,18 @@ void main()
             }
         #endif
 
-        // LIGHT
+        // LIGHT (Phong Shading)
         #if ENABLE_LIGHTNING == 1
         if (go_light == true) {
-            vec3 n = get_gradient(sampling_pos);
+            // vec3 n = get_gradient(sampling_pos);
             // n = think_positiv(n);
-            // map normal to color
-            // color = vec4(n.x, n.y, n.z, 1.0);
+            // color = vec4(n.x, n.y, n.z, 1.0);    // map normal to color
 
-            vec3 l = normalize(light_position - sampling_pos);
-            vec3 v = normalize(camera_location - sampling_pos);
-            vec3 r = normalize(reflect(l, n));
-            // ambient + diffuse + specular (Phong Shading)
-            vec4 new_color = vec4(light_ambient_color +
-                                    light_diffuse_color * max(dot(l,n), 0.0) + 
-                                    light_specular_color * pow(max(dot(r,v),0.0), light_ref_coef), 1);
-            dst = new_color;        // set color
+            dst = light_it_up(sampling_pos);
 
             // SHADOWS
             #if ENABLE_SHADOWING == 1
-
-                vec3 shadow_steps = -l * sampling_distance;
-                vec3 shadow_test_pos = sampling_pos + shadow_steps; // sampling mit new_coordinates austauschen
-            
-                bool shadow_inside_volume = true;
-                bool shadow_hit = false;
-            // float shadow_epsilon = 0.001;
-
-                while (shadow_inside_volume) {
-                    float shadow_s = get_sample_data(shadow_test_pos);
-                    float shadow_diff = shadow_s - iso_value;
-
-                    if (shadow_diff > 0) {
-                        if (shadow_hit) {
-                            dst = vec4(0,0,0,1); 
-                        }
-                        shadow_hit = true;
-                    }
-                    shadow_test_pos += shadow_steps;
-                    shadow_inside_volume = inside_volume_bounds(shadow_test_pos);
-                }
+                dst = shadow_it(sampling_pos, dst);
             #endif
         }
         #endif
@@ -282,30 +292,55 @@ void main()
 #endif 
 
 #if TASK == 31
-    // the traversal loop,
-    // termination when the sampling position is outside volume boundarys
-    // another termination condition for early ray termination is added
+    float trans = 1.0;
+    float s = get_sample_data(sampling_pos);
+    vec4 color = texture(transfer_texture, vec2(s, s));
+    vec3 inten = color.xyz * color.w;
+    float old_opac = color.w;
+    sampling_pos += ray_increment;
+    
     while (inside_volume)
     {
         // get sample
 #if ENABLE_OPACITY_CORRECTION == 1 // Opacity Correction
-        IMPLEMENT;
+        
 #else
-        float s = get_sample_data(sampling_pos);
+        // Front-To-Back
+        s = get_sample_data(sampling_pos);
+        color = texture(transfer_texture, vec2(s, s));
+        trans = trans * (1 - old_opac);
+        inten = inten + trans * color.xyz * color.w;
+        old_opac = color.w;
+        if (trans == 0.0) {
+            break;
+        }
+        // ------------
 #endif
-        // dummy code
-        dst = vec4(light_specular_color, 1.0);
 
         // increment the ray sampling position
         sampling_pos += ray_increment;
 
 #if ENABLE_LIGHTNING == 1 // Add Shading
-        IMPLEMENT;
+        
 #endif
-
         // update the loop termination condition
         inside_volume = inside_volume_bounds(sampling_pos);
     }
+
+    // Back-To-Front
+    // inten = vec3(0,0,0);
+    // while (inside_volume)
+    // {
+    //     s = get_sample_data(sampling_pos);
+    //     color = texture(transfer_texture, vec2(s, s));
+    //     sampling_pos -= ray_increment;
+    //     inten = color.xyz * color.w + inten * (1 - color.w);
+    //     // update the loop termination condition
+    //     inside_volume = inside_volume_bounds(sampling_pos);
+    // }
+    // ------------
+
+    dst = vec4(inten,1.0-trans);
 #endif 
 
     // return the calculated color value
