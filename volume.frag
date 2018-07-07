@@ -6,6 +6,7 @@
 #define ENABLE_OPACITY_CORRECTION 0
 #define ENABLE_LIGHTNING 0
 #define ENABLE_SHADOWING 0
+#define ENABLE_FRONTBACK 1
 
 in vec3 ray_entry_position;
 
@@ -114,12 +115,12 @@ light_it_up(vec3 sampling_pos, int factor)
     vec3 r = normalize(reflect(l, n));
     vec4 color = texture(transfer_texture, vec2(s, s));
     return vec4((light_ambient_color +
-        light_diffuse_color * max(dot(l,n), 0.0) * factor + 
-        light_specular_color * pow(max(dot(r,v),0.0), light_ref_coef) * factor) * color.xyz, 1);
+        light_diffuse_color * max(dot(l,n), 0.0) + 
+        light_specular_color * pow(max(dot(r,v),0.0), light_ref_coef)) * color.xyz * factor, 1);
 }
 
 vec4
-shadow_it(vec3 sampling_pos, vec4 color)
+shadow_it(vec3 sampling_pos, vec4 color, bool compositing)
 {
     vec3 l = normalize(light_position - sampling_pos);
     vec3 shadow_steps = -l * sampling_distance;
@@ -134,7 +135,7 @@ shadow_it(vec3 sampling_pos, vec4 color)
 
         if (shadow_diff >= 0) {
             if (shadow_hit) {
-                return vec4(light_ambient_color,1); 
+                return vec4(0,0,0,1); 
             }
             shadow_hit = true;
         }
@@ -223,7 +224,6 @@ void main()
 #endif
     
 #if TASK == 12 || TASK == 13
-	vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
 	vec3 old_pos = vec3(0.0, 0.0, 0.0);
 	float old_s = 0.0;
     bool breaking = false;
@@ -241,8 +241,7 @@ void main()
         	// Problem: gets only the same or higher density values (in this case enough)
         	if (s - iso_value >= 0) {
         		// apply the transfer functions to retrieve color and opacity
-        		color = texture(transfer_texture, vec2(s, s));
-       			dst = color;	// set color
+        		dst = texture(transfer_texture, vec2(s, s));
        			breaking = true;			// break while-loop
                 go_light = true;
         	}
@@ -253,8 +252,7 @@ void main()
         		vec3 new_coordinates = binary_search(old_pos, sampling_pos, 0.00001, 10000);
         		float new_s = get_sample_data(new_coordinates);
         		// apply the transfer functions to retrieve color and opacity
-        		color = texture(transfer_texture, vec2(new_s, new_s));                
-                dst = color;    // set color
+        		dst = texture(transfer_texture, vec2(new_s, new_s));
                 sampling_pos = new_coordinates;
                 breaking = true;
                 go_light = true;
@@ -272,7 +270,7 @@ void main()
 
             // SHADOWS
             #if ENABLE_SHADOWING == 1
-                dst = shadow_it(sampling_pos, dst);
+                dst = shadow_it(sampling_pos, dst, false);
             #endif
         }
         #endif
@@ -297,51 +295,59 @@ void main()
     float trans = 1.0;
     float s = get_sample_data(sampling_pos);
     vec4 color = texture(transfer_texture, vec2(s, s));
-    vec3 inten = color.xyz * color.w;
+    dst.xyz = color.xyz * color.w;
     float old_opac = color.w;
-    sampling_pos += ray_increment;
+    vec3 inten = vec3(0,0,0);
+
+    #if ENABLE_FRONTBACK == 1
+        sampling_pos += ray_increment;
+    #else
+        while (inside_volume) {
+            sampling_pos += ray_increment;
+            inside_volume = inside_volume_bounds(sampling_pos);
+        }
+        sampling_pos -= ray_increment;
+    #endif
     
     while (inside_volume)
     {
-    #if ENABLE_OPACITY_CORRECTION == 1 // Opacity Correction
-        
-    #else
-        // Front-To-Back
         s = get_sample_data(sampling_pos);
         color = texture(transfer_texture, vec2(s, s));
-        trans = trans * (1 - old_opac);
-        #if ENABLE_LIGHTNING == 1 // Add Shading
+        trans = trans * (1.0 - old_opac);
+
+        // Add Shading
+        #if ENABLE_LIGHTNING == 1
             color = vec4(light_it_up(sampling_pos, 3).xyz, color.w);
         #endif
-        inten = inten + trans * color.xyz * color.w;
-        old_opac = color.w;
-        if (trans == 0.0) {
-            break;
-        }
-        // ------------
-    #endif
 
-        // increment the ray sampling position
-        sampling_pos += ray_increment;
+        // Opacity Correction
+        #if ENABLE_OPACITY_CORRECTION == 1
+            color.w = 1.0 - pow((1.0 - color.w), 200 * sampling_distance / sampling_distance_ref);
+        #endif
+
+        // Front-To-Back
+        #if ENABLE_FRONTBACK == 1
+            dst.xyz = dst.xyz + trans * color.xyz * color.w;
+            old_opac = color.w;
+            if (trans < 0.0001) {
+                break;
+            }
+            sampling_pos += ray_increment;
+        #else
+            inten = color.xyz * color.w + inten * (1.0 - color.w);
+            sampling_pos -= ray_increment;
+        #endif
 
         // update the loop termination condition
         inside_volume = inside_volume_bounds(sampling_pos);
     }
 
-    // Back-To-Front
-    // inten = vec3(0,0,0);
-    // while (inside_volume)
-    // {
-    //     s = get_sample_data(sampling_pos);
-    //     color = texture(transfer_texture, vec2(s, s));
-    //     sampling_pos -= ray_increment;
-    //     inten = color.xyz * color.w + inten * (1 - color.w);
-    //     // update the loop termination condition
-    //     inside_volume = inside_volume_bounds(sampling_pos);
-    // }
-    // ------------
+    #if ENABLE_FRONTBACK == 1
+        dst = vec4(dst.xyz, 1.0 - trans);
+    #else
+        dst = vec4(inten, 1.0);
+    #endif
 
-    dst = vec4(inten,1.0-trans);
 #endif 
 
     // return the calculated color value
