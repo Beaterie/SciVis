@@ -105,15 +105,17 @@ think_positiv(vec3 sampling_pos)
 }
 
 vec4
-light_it_up(vec3 sampling_pos)
+light_it_up(vec3 sampling_pos, int factor)
 {
+    float s = get_sample_data(sampling_pos);
     vec3 n = get_gradient(sampling_pos);
     vec3 l = normalize(light_position - sampling_pos);
     vec3 v = normalize(camera_location - sampling_pos);
     vec3 r = normalize(reflect(l, n));
-    return vec4(light_ambient_color +
-        light_diffuse_color * max(dot(l,n), 0.0) + 
-        light_specular_color * pow(max(dot(r,v),0.0), light_ref_coef), 1);
+    vec4 color = texture(transfer_texture, vec2(s, s));
+    return vec4((light_ambient_color +
+        light_diffuse_color * max(dot(l,n), 0.0) * factor + 
+        light_specular_color * pow(max(dot(r,v),0.0), light_ref_coef) * factor) * color.xyz, 1);
 }
 
 vec4
@@ -266,7 +268,7 @@ void main()
             // n = think_positiv(n);
             // color = vec4(n.x, n.y, n.z, 1.0);    // map normal to color
 
-            dst = light_it_up(sampling_pos);
+            dst = light_it_up(sampling_pos, 1);
 
             // SHADOWS
             #if ENABLE_SHADOWING == 1
@@ -309,7 +311,7 @@ void main()
         color = texture(transfer_texture, vec2(s, s));
         trans = trans * (1 - old_opac);
         #if ENABLE_LIGHTNING == 1 // Add Shading
-            color = vec4(light_it_up(sampling_pos).xyz*color.xyz*2, color.w);
+            color = vec4(light_it_up(sampling_pos, 3).xyz, color.w);
         #endif
         inten = inten + trans * color.xyz * color.w;
         old_opac = color.w;
