@@ -17,7 +17,6 @@ uniform mat4 Modelview;
 uniform sampler3D volume_texture;
 uniform sampler2D transfer_texture;
 
-
 uniform vec3    camera_location;
 uniform float   sampling_distance;
 uniform float   sampling_distance_ref;
@@ -307,6 +306,7 @@ void main()
             inside_volume = inside_volume_bounds(sampling_pos);
         }
         sampling_pos -= ray_increment;
+        inside_volume = inside_volume_bounds(sampling_pos);
     #endif
     
     while (inside_volume)
@@ -338,7 +338,6 @@ void main()
             sampling_pos -= ray_increment;
         #endif
 
-        // update the loop termination condition
         inside_volume = inside_volume_bounds(sampling_pos);
     }
 
