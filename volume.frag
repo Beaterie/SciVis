@@ -164,9 +164,6 @@ void main()
 #if TASK == 10
     vec4 max_val = vec4(0.0, 0.0, 0.0, 0.0);
     
-    // the traversal loop,
-    // termination when the sampling position is outside volume boundarys
-    // another termination condition for early ray termination is added
     while (inside_volume) 
     {      
         // get sample
@@ -265,7 +262,7 @@ void main()
             // n = think_positiv(n);
             // color = vec4(n.x, n.y, n.z, 1.0);    // map normal to color
 
-            dst = light_it_up(sampling_pos, 1);
+            dst = light_it_up(sampling_pos, 2);
 
             // SHADOWS
             #if ENABLE_SHADOWING == 1
